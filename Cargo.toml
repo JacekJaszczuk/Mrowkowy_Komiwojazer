@@ -1,0 +1,7 @@
+[package]
+name = "algorytm_mrowkowy"
+version = "0.1.0"
+authors = ["JacekJaszczuk <218320@student.pwr.edu.pl>"]
+edition = "2018"
+
+[dependencies]
