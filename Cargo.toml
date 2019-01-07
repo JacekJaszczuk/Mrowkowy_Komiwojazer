@@ -5,3 +5,5 @@ authors = ["JacekJaszczuk <218320@student.pwr.edu.pl>"]
 edition = "2018"
 
 [dependencies]
+rand = "0.6.2"
+clap = "2.32.0"
