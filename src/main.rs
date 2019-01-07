@@ -1,12 +1,80 @@
-use rand::Rng;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::BTreeSet;
+use std::fs::File;
+use rand::Rng;
 use clap::{Arg, App, SubCommand};
 
-#[derive(Debug)]
+#[macro_use]
+extern crate serde_derive;
+
+extern crate serde;
+extern crate serde_json;
+
+// Testy:
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_straznik_dobry() {
+        let graf = super::Graf {
+            liczba_wezlow: 3,
+            macierz: vec![vec![1]],
+        };
+        let miasta = vec![0, 2, 1];
+        super::straznik(& graf, & miasta);
+    }
+
+    #[test]
+    #[should_panic]
+        fn test_straznik_rozna_liczba_miast() {
+        let graf = super::Graf {
+            liczba_wezlow: 7,
+            macierz: vec![vec![1]],
+        };
+        let miasta = vec![0, 2, 3, 1];
+        super::straznik(& graf, & miasta);
+    }
+
+    #[test]
+    #[should_panic]
+        fn test_straznik_powtarzajace_sie_miasta() {
+        let graf = super::Graf {
+            liczba_wezlow: 4,
+            macierz: vec![vec![1]],
+        };
+        let miasta = vec![0, 3, 3, 1];
+        super::straznik(& graf, & miasta);
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct Graf<T> {
     liczba_wezlow: usize,
     macierz: Vec<Vec<T>>,
+}
+
+impl<T> Graf<T> {
+    fn losowy(size: usize, min: usize, max: usize) -> Graf<usize> {
+        // Inicjalizuj generator liczb pseudolosowych:
+        let mut dice = rand::thread_rng();
+
+        // Twórz pola:
+        let liczba_wezlow = size;
+        let mut macierz = vec![vec![0; liczba_wezlow]; liczba_wezlow];
+
+        // Generuj losowe wartości w macierzy:
+        for x in &mut macierz {
+            for x in x {
+                *x = dice.gen_range(min, max);
+            }
+        }
+
+        // Zwróć graf:
+        Graf {
+            liczba_wezlow,
+            macierz,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -32,6 +100,16 @@ impl<'a> Mrowka<'a> {
     }
 }
 
+// Funkjca generuje graf i zapisuje go w katalogu grafy:
+fn generuj_graf(liczba_miast: usize, min: usize, max: usize) {
+    let graf = Graf::<usize>::losowy(liczba_miast, min, max);
+    //println!("{:?}", graf);
+
+    // Zapisz graf do pliku:
+    let file = File::create("grafy/nowy_graf.json").unwrap();
+    serde_json::to_writer(file, & graf).unwrap();
+}
+
 // Funkcja liczy długość trasy:
 fn funkcja_celu(graf: & Graf<usize>, miasta: & Vec<usize>) -> usize {
     let mut sum = 0;
@@ -48,6 +126,32 @@ fn funkcja_celu(graf: & Graf<usize>, miasta: & Vec<usize>) -> usize {
     sum
 }
 
+// Funkjca sprawdza czy wynik algorytmu jest prawidłowy (zgodny z założeniami):
+fn straznik(graf: & Graf<usize>, miasta: & Vec<usize>) {
+    // Sprawdź czy długość wektora z miastami, zgadza się z liczbą węzłów grafu:
+    if miasta.len() != graf.liczba_wezlow {
+        panic!("Liczba miast w wektorze nie zgadza się z liczbą miast w grafie!");
+    }
+
+    // Sprawdź czy miasta się nie powtarzają:
+    let mut miasta_zbior = BTreeSet::new();
+    for miasto in miasta {
+        miasta_zbior.insert(miasto);
+    }
+    if miasta_zbior.len() != miasta.len() {
+        panic!("Miasta w wektorze się powtarzają!");
+    }
+}
+
+// Funkjca algorytmu mrówkowego wczytująca graf z pliku:
+fn algorytm_mrowkowy_file(nazwa_grafu: String, liczba_iteracji: usize, waga_losowosci: f32, zostawiany_feromon: f32, ulatnianie_feromonu: f32) {
+    let file = File::open(nazwa_grafu).unwrap();
+    let graf: Graf<usize> = serde_json::from_reader(file).unwrap();
+    //println!("{:?}", graf);
+    algorytm_mrowkowy(& graf, liczba_iteracji, waga_losowosci, zostawiany_feromon, ulatnianie_feromonu);
+}
+
+// Funkcja algorytmu mrówkowego:
 fn algorytm_mrowkowy(graf: & Graf<usize>, liczba_iteracji: usize, waga_losowosci: f32, zostawiany_feromon: f32, ulatnianie_feromonu: f32) {
     // Wyznacz wagę feromonu:
     let waga_feromonu: f32 = 1.0 - waga_losowosci;
@@ -143,9 +247,66 @@ fn algorytm_mrowkowy(graf: & Graf<usize>, liczba_iteracji: usize, waga_losowosci
         }
         i = i + 1;
     }
+
+    // Sprawdź najlepsze rozwiązanie:
+    straznik(graf, & the_best.1);
+
     // Wypisz najlepsze rozwiązanie:
     println!("Rozkład feromonów:");
     println!("{:?}", feromony.borrow().macierz);
+    println!("Najlepsze rozwiązanie to:");
+    println!("{:?}", the_best);
+}
+
+// Funkjca algorytmu zachałannego wczytująca graf z pliku:
+fn algorytm_zachlanny_file(nazwa_grafu: String) {
+    let file = File::open(nazwa_grafu).unwrap();
+    let graf: Graf<usize> = serde_json::from_reader(file).unwrap();
+    //println!("{:?}", graf);
+    algorytm_zachlanny(& graf);
+}
+
+fn algorytm_zachlanny(graf: & Graf<usize>) {
+
+    // Obecne miasto:
+    let mut obecne_miasto = 0usize;
+
+    // Twórz wektor na najlepsze rozwiązanie:
+    let mut the_best = (std::usize::MAX, Vec::new());
+    the_best.1.push(obecne_miasto);
+
+    // Wektor nie odwiedzonych miast:
+    let mut nieodwiedzone_miasta = vec![true; graf.liczba_wezlow];
+    nieodwiedzone_miasta[obecne_miasto] = false;
+
+    // Dodawaj kolejne miasta do wektora:
+    let mut i = 0;
+    while i < graf.liczba_wezlow - 1 {
+        let mut najlepsze_miasto = (0usize, std::usize::MAX);
+        let mut j = 0;
+        while j < graf.liczba_wezlow {
+            if nieodwiedzone_miasta[j] == true {
+                // Sprawdź czy to lepsze posunięcie:
+                if graf.macierz[obecne_miasto][j] < najlepsze_miasto.1 {
+                    najlepsze_miasto = (j, graf.macierz[obecne_miasto][j]);
+                }
+            }
+            j += 1;
+        }
+        // Mamy najlepsze miasto w tym kroku zapisujemy je:
+        obecne_miasto = najlepsze_miasto.0;
+        nieodwiedzone_miasta[obecne_miasto] = false;
+        the_best.1.push(obecne_miasto);
+        i += 1;
+    }
+
+    // Sprawdź najlepsze rozwiązanie:
+    straznik(graf, & the_best.1);
+
+    // Wylicz wynik znalezionego rozwiązania:
+    the_best.0 = funkcja_celu(graf, & the_best.1);
+
+    // Wypisz najlepsze rozwiązanie:
     println!("Najlepsze rozwiązanie to:");
     println!("{:?}", the_best);
 }
@@ -165,6 +326,10 @@ fn main() {
             vec![ 5, 16, 20, 13,  4,  0],
             ],
     };
+
+    // Zapisz przykładowy graf do pliku graf1:
+    let file = File::create("grafy/graf1.json").unwrap();
+    serde_json::to_writer(file, & graf1).unwrap();
 
     // Biblioteka Clap do uzyskania argumentów linii poleceń:
     let matches = App::new("Program mrówkowy")
@@ -204,22 +369,53 @@ fn main() {
                 .required(true)
                 .help("Nazwa grafu")
                 .value_name("nazwa")))
+        .subcommand(SubCommand::with_name("wylosuj")
+            .about("Program losuje graf, zapisuje go w katalogu grafy")
+            .arg(Arg::with_name("liczba_miast")
+                .required(true)
+                .help("Liczba miast grafu")
+                .value_name("liczba"))
+            .arg(Arg::with_name("minimalna_liczba")
+                .required(true)
+                .help("Minimalna wartość w grafie")
+                .value_name("min"))
+            .arg(Arg::with_name("maksymalna_liczba")
+                .required(true)
+                .help("Maksymalna wartość w grafie")
+                .value_name("max")))
         .get_matches();
 
     // Uruchom algorytm mrowkowy:
     if let Some(matches) = matches.subcommand_matches("mrowkowy") {
+        println!("Algorytm mrówkowy!");
         // Odczytaj wartości:
+        let nazwa_grafu = matches.values_of("graf").unwrap().next().unwrap().parse::<String>().unwrap();
         let liczba_iteracji = matches.values_of("liczba_iteracji").unwrap().next().unwrap().parse::<usize>().unwrap();
         let waga_losowosci = matches.values_of("waga_losowosci").unwrap().next().unwrap().parse::<f32>().unwrap();
         let zostawiany_feromon = matches.values_of("zostawiany_feromon").unwrap().next().unwrap().parse::<f32>().unwrap();
         let ulatnianie_feromonu = matches.values_of("ulatnianie_feromonu").unwrap().next().unwrap().parse::<f32>().unwrap();
 
         // Wykonaj algorytm mrówkowy:
-        algorytm_mrowkowy(&graf1, liczba_iteracji, waga_losowosci, zostawiany_feromon, ulatnianie_feromonu);
+        //algorytm_mrowkowy(&graf1, liczba_iteracji, waga_losowosci, zostawiany_feromon, ulatnianie_feromonu);
+        algorytm_mrowkowy_file(nazwa_grafu, liczba_iteracji, waga_losowosci, zostawiany_feromon, ulatnianie_feromonu);
     }
 
     // Uruchom algorytm zachłanny:
     if let Some(matches) = matches.subcommand_matches("zachlanny") {
-        println!("Zachłanny!");
+        println!("Algorytm zachłanny!");
+        let nazwa_grafu = matches.values_of("graf").unwrap().next().unwrap().parse::<String>().unwrap();
+        algorytm_zachlanny_file(nazwa_grafu);
+    }
+
+    // Uruchom losowanie grafu:
+    if let Some(matches) = matches.subcommand_matches("wylosuj") {
+        println!("Losowanie grafu!");
+        // Odczytaj wartości:
+        let liczba_miast = matches.values_of("liczba_miast").unwrap().next().unwrap().parse::<usize>().unwrap();
+        let min = matches.values_of("minimalna_liczba").unwrap().next().unwrap().parse::<usize>().unwrap();
+        let max = matches.values_of("maksymalna_liczba").unwrap().next().unwrap().parse::<usize>().unwrap();
+
+        // Generuj graf i zapisz go do pliku:
+        generuj_graf(liczba_miast, min, max);
     }
 }
