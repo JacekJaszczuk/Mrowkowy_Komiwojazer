@@ -191,13 +191,15 @@ fn algorytm_mrowkowy(graf: & Graf<usize>, liczba_iteracji: usize, waga_losowosci
                 mrowka.nieodwiedzone_miasta[mrowka.obecne_miasto].0 = false;
 
                 // Licz atrakcyjność dla każdej ścieżki i szukaj najlepszego miasta:
-                let mut best = (0usize, std::f32::MAX);
+                //let mut best = (0usize, std::f32::MAX);
+                let mut best = (0usize, 0.0);
                 let mut j = 0; // Indeks miasta.
                 for miasto in mrowka.nieodwiedzone_miasta.iter_mut() {
                     // Jeżeli miasto nie było jeszcze odwiedzone to:
                     if miasto.0 == true {
                         miasto.1 = dice.gen_range(0.0, waga_losowosci) + waga_feromonu * mrowka.feromony.borrow().macierz[mrowka.obecne_miasto][j];
-                        if miasto.1 < best.1 {
+                        //if miasto.1 < best.1 {
+                        if miasto.1 > best.1 {
                             // Mamy najlepszy wynik, zapisujemy go:
                             best.0 = j;
                             best.1 = miasto.1;
